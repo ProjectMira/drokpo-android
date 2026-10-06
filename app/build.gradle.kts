@@ -125,6 +125,12 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.exifinterface)
+    // Not used directly. Play services / credentials request androidx.fragment 1.1.0 and 1.2.5
+    // transitively (resolved to 1.5.7), and the activity library's
+    // InvalidFragmentVersionForActivityResult lint check fails MainActivity's
+    // registerForActivityResult on those requested versions. A direct >= 1.3.0 dependency
+    // (the version already resolved, so nothing changes at runtime) satisfies it.
+    implementation(libs.androidx.fragment)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

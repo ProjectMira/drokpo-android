@@ -2,27 +2,102 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ runtime permission, asked once when the session becomes
+         active (PushService.enable — where iOS shows its system prompt). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Discover distance / onboarding location (iOS CoreLocation when-in-use). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Voice comments and chat voice messages. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- No storage permissions: the system photo picker needs none. -->
+
+    <queries>
+        <!-- Custom Tabs (in-app browser, the iOS SafariView counterpart). -->
+        <intent>
+            <action android:name="android.support.customtabs.action.CustomTabsService" />
+        </intent>
+        <!-- Browsers, for when no Custom Tabs provider is installed. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
     <application
         android:name=".DrokpoApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Drokpo">
 
+        <!-- iOS is portrait-only. configChanges: Compose handles these in
+             place, so presentation-scoped ViewModels (sheets, covers) and the
+             in-app appearance override survive them. ScopedViewModels keeps its
+             stores in `remember`, not the Activity's ViewModelStore, so any
+             change missing here (e.g. Bold text = fontWeightAdjustment)
+             recreates the Activity and drops ChatStore, open sheets and drafts. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density|fontScale|fontWeightAdjustment|grammaticalGender|locale|layoutDirection|mcc|mnc|touchscreen|navigation|colorMode"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Drokpo.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Shared-content links: drokpo://s/{type}/{id} (share.html's
+                 "Open in Drokpo"; "s" is the host). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="drokpo"
+                    android:host="s" />
+            </intent-filter>
+
+            <!-- Hosted share pages https://drokpo-backend.web.app/s/{type}/{id}
+                 (iOS universal links). Verification needs
+                 /.well-known/assetlinks.json on Firebase Hosting. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="drokpo-backend.web.app"
+                    android:pathPrefix="/s/" />
+            </intent-filter>
         </activity>
+
+        <service
+            android:name=".core.DrokpoMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- Background pushes are drawn by the system from these defaults
+             (the backend sends notification + data, no Android channel). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_accent" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="drokpo_default" />
     </application>
 </manifest>

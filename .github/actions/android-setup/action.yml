@@ -1,0 +1,72 @@
+name: Android build setup
+description: >
+  JDK 21 (Temurin), Gradle with dependency caching, and the Android SDK
+  packages the app compiles against. Shared by android-ci.yml and release.yml.
+
+inputs:
+  platform:
+    description: SDK platform package (compileSdk = 37 in app/build.gradle.kts)
+    default: platforms;android-37.0
+  build-tools:
+    description: Build-tools package (aapt2/apksigner used by ci/verify-release-outputs.sh)
+    default: build-tools;37.0.0
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 21
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        # The MIT-licensed actions/cache-based provider: the default
+        # "enhanced" provider is proprietary and only free while the repo
+        # stays public. Cache writes happen on the default branch only.
+        cache-provider: basic
+
+    - name: Install Android SDK packages
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        BUILD_TOOLS: ${{ inputs.build-tools }}
+      run: |
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        if [ -z "$sdk" ] || [ ! -d "$sdk" ]; then
+          echo "::error::ANDROID_HOME is not set — these workflows expect a GitHub-hosted ubuntu runner, which ships the Android SDK."
+          exit 1
+        fi
+        sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+        if [ ! -x "$sdkmanager" ]; then
+          sdkmanager="$(find "$sdk/cmdline-tools" -path '*/bin/sdkmanager' 2>/dev/null | sort -V | tail -n 1)"
+        fi
+        [ -x "$sdkmanager" ] || { echo "::error::No sdkmanager under $sdk/cmdline-tools."; exit 1; }
+
+        # Runner images lag new API levels; only install what's missing.
+        need=()
+        [ -f "$sdk/platforms/${PLATFORM#platforms;}/android.jar" ] || need+=("$PLATFORM")
+        [ -x "$sdk/build-tools/${BUILD_TOOLS#build-tools;}/aapt2" ] || need+=("$BUILD_TOOLS")
+        if [ "${#need[@]}" -eq 0 ]; then
+          echo "SDK already has $PLATFORM and $BUILD_TOOLS."
+          exit 0
+        fi
+        # `yes |` would SIGPIPE under the default `bash -eo pipefail`.
+        "$sdkmanager" --licenses < <(yes) > /dev/null
+        log="$RUNNER_TEMP/sdkmanager.log"
+        if ! "$sdkmanager" --install "${need[@]}" > "$log" 2>&1; then
+          # An image's cmdline-tools can be too old to read the package
+          # metadata of a new API level ("Failed to find package"); update
+          # them once and retry before giving up.
+          echo "sdkmanager failed; updating cmdline-tools and retrying…"
+          "$sdkmanager" --install "cmdline-tools;latest" >> "$log" 2>&1 || true
+          sdkmanager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+          if ! "$sdkmanager" --install "${need[@]}" >> "$log" 2>&1; then
+            tail -n 30 "$log"
+            echo "::error::Could not install ${need[*]} with sdkmanager (log above)."
+            exit 1
+          fi
+        fi
+        echo "Installed ${need[*]}."

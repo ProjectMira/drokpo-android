@@ -19,3 +19,6 @@ keystore.properties
 
 # macOS
 .DS_Store
+
+# Brand-asset generator venv (ci/make_brand_assets.py)
+.venv-brand/

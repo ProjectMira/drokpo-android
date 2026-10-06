@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand artwork colours; fixed in both themes (Compose UI reads the
+         theme-aware tokens in ui/theme/Color.kt instead). -->
+    <color name="brand_red">#FFFF0000</color>
+    <color name="brand_blue">#FF1877F2</color>
+    <color name="ic_launcher_background">#FFFF0000</color>
+
+    <!-- iOS systemBackground: window + splash ground (night variant in values-night). -->
+    <color name="system_background">#FFFFFFFF</color>
+
+    <!-- FCM default_notification_color: the app accent tints the small icon. -->
+    <color name="notification_accent">#FF1877F2</color>
+</resources>

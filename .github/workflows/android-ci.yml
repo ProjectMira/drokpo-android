@@ -1,0 +1,94 @@
+name: Android CI
+
+# Every branch push and every pull request: unit tests, Android lint and a
+# debug APK you can sideload (signed with the committed debug.keystore, whose
+# SHA-1 is registered in Firebase, so Google sign-in works on it).
+#
+# Optional repo secret:
+#   GOOGLE_SERVICES_JSON — contents of app/google-services.json. Without it
+#   (forks, or before setup) the build still passes; the APK then shows the
+#   "Firebase not configured" notice instead of the sign-in screen.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# One run per branch / PR: a newer push cancels the older, still-running one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Explicit bash = `bash --noprofile --norc -eo pipefail`; the implicit
+# default is plain `bash -e`, which lets a failing command in a pipe slip by.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Tests, lint, debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK, Gradle and Android SDK
+        uses: ./.github/actions/android-setup
+
+      - name: Restore google-services.json
+        run: bash ci/restore-google-services.sh
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+
+      - name: Name artifacts
+        id: names
+        env:
+          # On pull_request, GITHUB_SHA is the temporary merge commit; name the
+          # artifact after the commit people actually pushed.
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          # Artifact names can't contain / \ : " < > | * ?
+          branch="$(printf '%s' "$branch" | tr '/\\:"<>|*?' '-')"
+          echo "suffix=${branch}-${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Test the CI scripts
+        run: python3 -m unittest discover -s ci/tests
+
+      - name: Unit tests, lint, debug build
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --stacktrace
+
+      - name: Stage debug APK
+        env:
+          SUFFIX: ${{ steps.names.outputs.suffix }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/apk/drokpo-debug-${SUFFIX}.apk"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: drokpo-debug-${{ steps.names.outputs.suffix }}
+          path: ${{ runner.temp }}/apk/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Summarise test and lint results
+        if: always()
+        run: python3 ci/report-summary.py >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reports-${{ steps.names.outputs.suffix || github.run_id }}
+          path: |
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14

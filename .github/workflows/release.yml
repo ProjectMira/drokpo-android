@@ -1,0 +1,257 @@
+name: Release
+
+# The Android twin of drokpo-app's TestFlight workflow: every push to main or
+# dev builds a signed release bundle and publishes it to the Google Play
+# *internal testing* track (release name says which branch it came from);
+# "Run workflow" can target another track. One-time setup: docs/RELEASE.md.
+on:
+  push:
+    branches: [main, dev]
+    # Docs-only pushes would burn a versionCode and ping every tester.
+    paths-ignore: ["**.md", "docs/**"]
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Google Play track
+        type: choice
+        options: [internal, alpha, beta, production]
+        default: internal
+      status:
+        description: Release status — 'draft' while the app has never been published (Play rejects 'completed' then)
+        type: choice
+        options: [completed, draft]
+        default: completed
+
+# Required repo secrets (ci/setup-release-signing.sh sets all but the last):
+#   GOOGLE_SERVICES_JSON          contents of app/google-services.json
+#   DROKPO_UPLOAD_KEYSTORE_B64    base64 of the Play upload keystore (.jks)
+#   DROKPO_UPLOAD_STORE_PASSWORD  keystore password
+#   DROKPO_UPLOAD_KEY_ALIAS       key alias
+#   DROKPO_UPLOAD_KEY_PASSWORD    key password
+#   PLAY_SERVICE_ACCOUNT_JSON     JSON key of the Play publishing service account
+# Without the keystore secrets the run builds UNSIGNED and skips Play; without
+# PLAY_SERVICE_ACCOUNT_JSON it builds signed and skips Play. Either way the
+# bundle is archived as a workflow artifact (that's how the very first,
+# manual Play upload is made).
+# Optional repo variables:
+#   PLAY_RELEASE_STATUS               'draft' makes pushes create draft releases
+#                                     (needed until the app's first release is rolled out)
+#   PLAY_CHANGES_NOT_SENT_FOR_REVIEW  'true' once Play asks for changesNotSentForReview
+env:
+  PACKAGE_NAME: app.drokpo.android
+  # versionCode = run_number + VERSION_CODE_OFFSET. 0 is right for a fresh
+  # repo because the first (manual) Play upload is this workflow's own
+  # artifact, so CI numbering never collides with it. Raise it if run_number
+  # ever restarts below a versionCode Play already has — the workflow file was
+  # renamed/recreated, the repo moved, or a bundle was built and uploaded by
+  # hand with a higher number — to anything that makes run_number + offset
+  # exceed the highest versionCode in Play Console → App bundle explorer.
+  # (The "Verify Google Play credentials" step checks this before building.)
+  VERSION_CODE_OFFSET: 0
+  ANDROID_BUILD_TOOLS_VERSION: 37.0.0
+
+# Queue rather than cancel: cancelling mid-upload leaves nothing broken (an
+# uncommitted Play edit just expires), but would silently drop that build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# Explicit bash = `bash --noprofile --norc -eo pipefail`; the implicit
+# default is plain `bash -e`, which lets a failing command in a pipe slip by.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Build and publish to Google Play
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # pushes the version tag after a successful Play upload
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK, Gradle and Android SDK
+        uses: ./.github/actions/android-setup
+
+      - name: Restore google-services.json
+        # Required whenever this run can publish (a Play build without Firebase
+        # config would ship the "Firebase not configured" screen). Before the
+        # Play service account exists nothing is published, so a missing secret
+        # is only a warning and the dry-run bundle is still built and archived.
+        run: |
+          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            bash ci/restore-google-services.sh --required
+          else
+            bash ci/restore-google-services.sh
+          fi
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - name: Restore upload keystore
+        id: signing
+        run: bash ci/restore-upload-keystore.sh
+        env:
+          DROKPO_UPLOAD_KEYSTORE_B64: ${{ secrets.DROKPO_UPLOAD_KEYSTORE_B64 }}
+          DROKPO_UPLOAD_STORE_PASSWORD: ${{ secrets.DROKPO_UPLOAD_STORE_PASSWORD }}
+          DROKPO_UPLOAD_KEY_ALIAS: ${{ secrets.DROKPO_UPLOAD_KEY_ALIAS }}
+          DROKPO_UPLOAD_KEY_PASSWORD: ${{ secrets.DROKPO_UPLOAD_KEY_PASSWORD }}
+
+      - name: Compute version, track and release name
+        id: version
+        env:
+          # Pushes always go to internal; PLAY_RELEASE_STATUS only affects pushes
+          # (a manual run's own 'status' input wins).
+          TRACK: ${{ inputs.track || 'internal' }}
+          STATUS: ${{ inputs.status || vars.PLAY_RELEASE_STATUS || 'completed' }}
+        run: |
+          # Keep in step with MARKETING_VERSION in drokpo-app/project.yml.
+          VERSION_NAME="$(sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' app/build.gradle.kts)"
+          if ! [[ "$VERSION_NAME" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Could not read a single numeric versionName from app/build.gradle.kts (got '${VERSION_NAME//$'\n'/, }')."
+            exit 1
+          fi
+          VERSION_CODE=$((GITHUB_RUN_NUMBER + VERSION_CODE_OFFSET))
+          if [ "$VERSION_CODE" -lt 1 ] || [ "$VERSION_CODE" -gt 2100000000 ]; then
+            echo "::error::versionCode $VERSION_CODE is outside Play's 1..2100000000 range — check VERSION_CODE_OFFSET."
+            exit 1
+          fi
+          case "$TRACK" in internal|alpha|beta|production) ;; *)
+            echo "::error::Unknown track '$TRACK'."; exit 1 ;; esac
+          case "$STATUS" in completed|draft) ;; *)
+            echo "::error::Release status '$STATUS' must be completed or draft (check the PLAY_RELEASE_STATUS repo variable)."; exit 1 ;; esac
+          # e.g. "1.1 (42) dev@abc1234" — Play caps release names at 50 chars.
+          RELEASE_NAME="$VERSION_NAME ($VERSION_CODE) ${GITHUB_REF_NAME:0:24}@${GITHUB_SHA::7}"
+          TAG="v${VERSION_NAME}-android.${VERSION_CODE}"
+          {
+            echo "VERSION_NAME=$VERSION_NAME"
+            echo "VERSION_CODE=$VERSION_CODE"
+            echo "RELEASE_NAME=$RELEASE_NAME"
+            echo "TRACK=$TRACK"
+            echo "STATUS=$STATUS"
+            echo "TAG=$TAG"
+          } | tee -a "$GITHUB_ENV" | sed 's/^/  /'
+          {
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify Google Play credentials
+        id: play
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          # Fail in seconds — not after a ten-minute R8 build — if the service
+          # account can't publish, or this versionCode is already taken.
+          if [ "$SIGNED" != true ]; then
+            echo "::warning title=Google Play upload skipped::This build is unsigned (no upload keystore secrets) and Play only accepts bundles signed with the upload key. See docs/RELEASE.md."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::warning title=Google Play upload skipped::PLAY_SERVICE_ACCOUNT_JSON is not set — building and archiving a signed release, but not uploading it. See docs/RELEASE.md (one-time Play Console setup)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 ci/play_publish.py verify --package "$PACKAGE_NAME" --version-code "$VERSION_CODE"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build release bundle and APK
+        env:
+          # DROKPO_UPLOAD_STORE_FILE comes from the keystore step via $GITHUB_ENV;
+          # the passwords go only to this step.
+          DROKPO_UPLOAD_STORE_PASSWORD: ${{ secrets.DROKPO_UPLOAD_STORE_PASSWORD }}
+          DROKPO_UPLOAD_KEY_ALIAS: ${{ secrets.DROKPO_UPLOAD_KEY_ALIAS }}
+          DROKPO_UPLOAD_KEY_PASSWORD: ${{ secrets.DROKPO_UPLOAD_KEY_PASSWORD }}
+        run: ./gradlew :app:bundleRelease :app:assembleRelease -Pdrokpo.versionCode="$VERSION_CODE" --stacktrace
+
+      - name: Verify release outputs
+        id: outputs
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+          UPLOAD_SHA256: ${{ steps.signing.outputs.sha256 }}
+        run: bash ci/verify-release-outputs.sh "$VERSION_CODE" "$VERSION_NAME" "$SIGNED" "$UPLOAD_SHA256"
+
+      - name: Stage artifacts
+        env:
+          AAB: ${{ steps.outputs.outputs.aab }}
+          APK: ${{ steps.outputs.outputs.apk }}
+          MAPPING: ${{ steps.outputs.outputs.mapping }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          out="$RUNNER_TEMP/release"
+          suffix="$([ "$SIGNED" = true ] || echo -unsigned)"
+          mkdir -p "$out"
+          cp "$AAB" "$out/drokpo-${VERSION_NAME}-${VERSION_CODE}${suffix}.aab"
+          cp "$APK" "$out/drokpo-${VERSION_NAME}-${VERSION_CODE}${suffix}.apk"
+          if [ -n "$MAPPING" ]; then cp "$MAPPING" "$out/mapping-${VERSION_NAME}-${VERSION_CODE}.txt"; fi
+          ls -l "$out"
+
+      # Before the Play upload, so the bundle is downloadable even if Play
+      # rejects it (and for the first, manual upload — see docs/RELEASE.md).
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: drokpo-release-${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.version_code }}${{ steps.signing.outputs.signed != 'true' && '-unsigned' || '' }}
+          path: ${{ runner.temp }}/release/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload to Google Play
+        id: upload
+        if: steps.play.outputs.enabled == 'true'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PLAY_CHANGES_NOT_SENT_FOR_REVIEW: ${{ vars.PLAY_CHANGES_NOT_SENT_FOR_REVIEW }}
+          AAB: ${{ steps.outputs.outputs.aab }}
+          MAPPING: ${{ steps.outputs.outputs.mapping }}
+        run: |
+          python3 ci/play_publish.py upload --package "$PACKAGE_NAME" \
+            --aab "$AAB" --mapping "$MAPPING" \
+            --track "$TRACK" --status "$STATUS" \
+            --release-name "$RELEASE_NAME" --version-code "$VERSION_CODE"
+
+      - name: Tag release
+        if: steps.upload.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::warning::Tag $TAG already exists on origin; leaving it alone."
+            exit 0
+          fi
+          git tag -a "$TAG" -m "Google Play $TRACK ($STATUS): $RELEASE_NAME"
+          git push origin "refs/tags/$TAG"
+
+      - name: Summary
+        if: always()
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+          PLAY: ${{ steps.play.outputs.enabled }}
+          UPLOAD: ${{ steps.upload.outcome }}
+        run: |
+          case "$UPLOAD" in
+            success) play="published to **${TRACK:-?}** (${STATUS:-?}), tagged \`${TAG:-?}\`" ;;
+            failure) play="**upload failed** — see the error above" ;;
+            *) play="skipped$([ "$PLAY" = false ] && echo ' (see warnings)')" ;;
+          esac
+          {
+            echo "### Android release"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Version | ${VERSION_NAME:-?} (${VERSION_CODE:-?}) |"
+            echo "| Release name | ${RELEASE_NAME:-?} |"
+            echo "| Signed with upload key | ${SIGNED:-?} |"
+            echo "| Google Play | $play |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/drokpo-upload.jks" app/google-services.json

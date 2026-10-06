@@ -1,9 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Drokpo" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Post-splash window theme. Compose draws all UI (ui/theme/Theme.kt); this
+         only paints the window before the first frame / behind transitions and
+         makes the system bars transparent for edge-to-edge. MainActivity's
+         enableEdgeToEdge() and DrokpoTheme keep the bar icon colours right at
+         runtime (including the in-app Light/Dark override). -->
+    <style name="Theme.Drokpo" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/system_background</item>
+        <item name="android:colorBackground">@color/system_background</item>
+        <item name="android:colorAccent">@color/brand_blue</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
 
-    <style name="Theme.Drokpo.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@android:color/white</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    <!-- Launch theme (androidx core-splashscreen). iOS shows a blank
+         systemBackground launch screen; Android always shows an icon, so it's
+         the brand mark — blue handshake on the red disc — on the system
+         background. ic_splash_handshake is a vector twin of the adaptive
+         foreground (a 240dp bitmap upscale would blur); its 108-unit canvas
+         keeps the 2:3 glyph-to-disc proportion of the launcher icon. The
+         IconBackground parent is what makes the red disc draw. -->
+    <style name="Theme.Drokpo.Starting" parent="Theme.SplashScreen.IconBackground">
+        <item name="windowSplashScreenBackground">@color/system_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_handshake</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/brand_red</item>
         <item name="postSplashScreenTheme">@style/Theme.Drokpo</item>
     </style>
 </resources>

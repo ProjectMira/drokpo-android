@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resource-shrinker keep list (release builds use isShrinkResources = true).
+     AuthService.webClientId() looks up default_web_client_id by name with getIdentifier — it only
+     exists when google-services.json does, so it can't be an R.string reference — and the
+     shrinker can't see by-name lookups. Without this, release builds drop the string and
+     "Sign in with Google" fails with "Couldn't present the sign-in screen." A raw file isn't
+     compiled, so a json-less build (no such string) still builds. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/default_web_client_id" />

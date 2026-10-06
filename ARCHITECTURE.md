@@ -44,8 +44,10 @@ reached through `AppGraph`. ViewModels are created with
 DrokpoApplication.kt      Firebase init, AppGraph, notification channels
 MainActivity.kt           single activity: splash, edge-to-edge, deep links, push taps
 RootScreen.kt             session-state router (mirrors iOS RootView)
-MainTabs.kt               5-tab shell (mirrors iOS MainTabView)
+MainTabs.kt               5-tab shell (mirrors iOS MainTabView), TabReselectEffect
 core/                     ports of Drokpo/Core/*.swift (models, API, session, auth, uploaders, push, …)
+navigation/               SharedNavigation.kt: SharedRoute + sharedDestinations() — the profile /
+                          community / members destinations every NavHost can push (CONTRACT §A.13)
 ui/theme/                 Color.kt, Type.kt, Theme.kt, Brand.kt (iOS-style text styles + brand colours)
 ui/components/            small generic widgets used everywhere (FlowRow wrappers, loading/empty/error states, grouped list rows, …)
 features/<area>/          one package per iOS Features/<Area> folder
@@ -78,10 +80,16 @@ Feature packages map 1:1 to iOS folders:
 
 ## Ownership & parallel work protocol
 
+> **Binding cross-package signatures live in [`docs/CONTRACT.md`](docs/CONTRACT.md)**: the spine
+> API (§A), every feature group's public entry points (§B), navigation (§C), state scoping (§D),
+> the debug catalog (§E) and per-group behaviour checklists (§F). Its §0.6 "Calling the API"
+> sets the one style for REST calls, errors and models. Where this file and the contract
+> disagree, the contract wins.
+
 The app is built by several agents in parallel. **Each agent owns specific
 directories and must not edit files outside them.** Shared files
 (`build.gradle.kts`, `libs.versions.toml`, `AndroidManifest.xml`, `core/`,
-`ui/`, `RootScreen.kt`, `MainTabs.kt`, catalog registry) are owned by the
+`ui/`, `navigation/`, `RootScreen.kt`, `MainTabs.kt`, catalog registry) are owned by the
 foundation; feature agents that need a change there **report it** in their
 final output instead of editing (the integrator applies it). A feature may add
 private helpers inside its own package rather than changing `core/`.
@@ -176,7 +184,9 @@ area contributes `catalog/<Area>Catalog.kt` exposing
 composables + fixtures from `catalog/Fixtures.kt`). Launch one entry:
 
 ```
-adb shell am start -n app.drokpo.android/.catalog.CatalogActivity --es entry <id>
+adb shell am start -n app.drokpo.android/.catalog.CatalogActivity                    # searchable list
+adb shell am start -n app.drokpo.android/.catalog.CatalogActivity --es entry <id>    # one entry
+adb shell am start -n app.drokpo.android/.catalog.CatalogActivity --es entry <id> --ez dark true
 ```
 
 ## Release & CI

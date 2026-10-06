@@ -1,9 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Drokpo" parent="android:Theme.Material.NoActionBar" />
+    <!-- Dark counterparts of values/themes.xml (see the comments there). -->
+    <style name="Theme.Drokpo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/system_background</item>
+        <item name="android:colorBackground">@color/system_background</item>
+        <item name="android:colorAccent">@color/brand_blue</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 
-    <style name="Theme.Drokpo.Starting" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@android:color/black</item>
-        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    <style name="Theme.Drokpo.Starting" parent="Theme.SplashScreen.IconBackground">
+        <item name="windowSplashScreenBackground">@color/system_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_handshake</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/brand_red</item>
         <item name="postSplashScreenTheme">@style/Theme.Drokpo</item>
     </style>
 </resources>
