@@ -1,0 +1,21 @@
+# Gradle / Android Studio
+.gradle/
+build/
+/local.properties
+/.idea/
+*.iml
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Firebase config — CI restores it from the GOOGLE_SERVICES_JSON secret
+app/google-services.json
+
+# Release signing — never commit the upload key or its passwords
+keystore.properties
+*.jks
+!app/debug.keystore
+
+# macOS
+.DS_Store
