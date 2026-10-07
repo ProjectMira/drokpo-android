@@ -74,7 +74,10 @@ fun RoundedTextField(
                 if (value.isEmpty()) {
                     Text(placeholder, style = style, color = colors.placeholderText, modifier = Modifier.fillMaxWidth())
                 }
-                inner()
+                // Stretch the inner field to the full width: a single-line BasicTextField otherwise
+                // takes only its intrinsic width, so textAlign = Center would centre the placeholder
+                // but leave the cursor and typed text in a narrow slot at the start.
+                Box(Modifier.fillMaxWidth(), propagateMinConstraints = true) { inner() }
             }
         },
     )

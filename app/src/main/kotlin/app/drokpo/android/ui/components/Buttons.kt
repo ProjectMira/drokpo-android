@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.drokpo.android.ui.theme.DrokpoColors
 import app.drokpo.android.ui.theme.DrokpoPreviews
 import app.drokpo.android.ui.theme.DrokpoTheme
 
@@ -88,6 +91,7 @@ private fun DrokpoButtonBase(
     shape: Shape,
     containerColor: Color,
     contentColor: Color,
+    spacing: Dp = 6.dp,
     content: @Composable RowScope.() -> Unit,
 ) {
     Surface(
@@ -107,7 +111,7 @@ private fun DrokpoButtonBase(
             ) {
                 Row(
                     modifier = Modifier.alpha(if (loading) 0f else 1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                    horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                     content = content,
                 )
@@ -209,9 +213,12 @@ fun PrimaryButton(
 }
 
 /**
- * `.buttonStyle(.bordered)`: [tint]-coloured label on a translucent [tint]
+ * `.buttonStyle(.bordered)`. With no [tint] (iOS: no `.tint()`), an accent
+ * label on the grey secondarySystemFill ([DrokpoColors.secondaryFill]). With
+ * an explicit [tint] (iOS `.tint(x)`), an x-coloured label on a translucent x
  * fill. `.tint(.secondary)` (e.g. a "Joined" button) →
- * `tint = DrokpoTheme.colors.secondaryLabel`.
+ * `tint = DrokpoTheme.colors.secondaryLabel`; `.tint(.accentColor)` →
+ * `tint = DrokpoTheme.colors.accent` (blue fill, not grey).
  */
 @Composable
 fun SecondaryButton(
@@ -222,7 +229,8 @@ fun SecondaryButton(
     loading: Boolean = false,
     icon: ImageVector? = null,
     size: ControlSize = ControlSize.Regular,
-    tint: Color = DrokpoTheme.colors.accent,
+    /** [Color.Unspecified] = untinted (grey fill, accent label). */
+    tint: Color = Color.Unspecified,
     shape: Shape = ButtonMetrics.shape(size),
     textStyle: TextStyle? = null,
 ) {
@@ -239,12 +247,16 @@ fun SecondaryButton(
     enabled: Boolean = true,
     loading: Boolean = false,
     size: ControlSize = ControlSize.Regular,
-    tint: Color = DrokpoTheme.colors.accent,
+    /** [Color.Unspecified] = untinted (grey fill, accent label). */
+    tint: Color = Color.Unspecified,
     shape: Shape = ButtonMetrics.shape(size),
+    /** Gap between label children (the sign-in provider rows use 10). */
+    spacing: Dp = 6.dp,
     content: @Composable RowScope.() -> Unit,
 ) {
     val colors = DrokpoTheme.colors
     val fillAlpha = if (colors.isDark) 0.24f else 0.14f
+    val container = if (tint.isSpecified) tint.copy(alpha = tint.alpha * fillAlpha) else colors.secondaryFill
     DrokpoButtonBase(
         onClick = onClick,
         modifier = modifier,
@@ -252,8 +264,9 @@ fun SecondaryButton(
         loading = loading,
         size = size,
         shape = shape,
-        containerColor = if (enabled) tint.copy(alpha = tint.alpha * fillAlpha) else colors.tertiaryFill,
-        contentColor = if (enabled) tint else colors.tertiaryLabel,
+        containerColor = if (enabled) container else colors.tertiaryFill,
+        contentColor = if (enabled) tint.takeOrElse { colors.accent } else colors.tertiaryLabel,
+        spacing = spacing,
         content = content,
     )
 }

@@ -14,9 +14,13 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -27,12 +31,23 @@ import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import app.drokpo.android.ui.theme.DrokpoPreviews
 import app.drokpo.android.ui.theme.DrokpoTheme
+import kotlinx.coroutines.launch
 
 /**
  * True inside a [DrokpoSheet]. [DrokpoTopBar] reads it to drop the status-bar
  * inset (a sheet never sits under the status bar). CONTRACT.md §A.12.
  */
 val LocalInsideSheet: ProvidableCompositionLocal<Boolean> = staticCompositionLocalOf { false }
+
+/**
+ * Inside a [DrokpoSheet]: slides the sheet down, then calls its
+ * `onDismissRequest` — iOS `dismiss()`, which animates. Wire the sheet's own
+ * Close (X) to it, so the sheet slides away instead of vanishing:
+ * `onClose = LocalSheetDismiss.current ?: onDismissRequest`. Repeated calls
+ * during one hide are ignored (the caller gets one `onDismissRequest`). Null
+ * outside a sheet, and inside a [FullScreenCover] presented from one.
+ */
+val LocalSheetDismiss: ProvidableCompositionLocal<(() -> Unit)?> = staticCompositionLocalOf { null }
 
 /**
  * Provides a fresh `LocalViewModelStoreOwner` for [content] and clears its
@@ -76,19 +91,41 @@ fun DrokpoSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     skipPartiallyExpanded: Boolean = true,
+    /** Sheet surface, grabber strip included (e.g. groupedBackground for a grouped list). */
+    containerColor: Color = DrokpoTheme.colors.background,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = skipPartiallyExpanded)
+    val coroutineScope = rememberCoroutineScope()
+    val currentOnDismiss by rememberUpdatedState(onDismissRequest)
+    val animatedDismiss: () -> Unit = remember(sheetState, coroutineScope) {
+        // One dismissal per hide: a second hide() would cancel the first (invokeOnCompletion
+        // runs on cancellation too) and the caller would get onDismissRequest twice. Re-armed
+        // afterwards in case the caller keeps the sheet composed.
+        var closing = false
+        {
+            if (!closing) {
+                closing = true
+                coroutineScope.launch { sheetState.hide() }.invokeOnCompletion {
+                    closing = false
+                    currentOnDismiss()
+                }
+            }
+        }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         sheetState = sheetState,
-        containerColor = DrokpoTheme.colors.background,
+        containerColor = containerColor,
         contentColor = DrokpoTheme.colors.label,
         dragHandle = if (skipPartiallyExpanded) null else ({ BottomSheetDefaults.DragHandle() }),
     ) {
         val scope = this
-        CompositionLocalProvider(LocalInsideSheet provides true) {
+        CompositionLocalProvider(
+            LocalInsideSheet provides true,
+            LocalSheetDismiss provides animatedDismiss,
+        ) {
             ScopedViewModels { scope.content() }
         }
     }
@@ -129,13 +166,17 @@ fun FullScreenCover(
             window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
             window.setDimAmount(0f)
         }
-        ScopedViewModels {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(DrokpoTheme.colors.background),
-            ) {
-                content()
+        // A cover presented from inside a sheet is not itself in the sheet: it sits under the
+        // status bar, and its Close must not slide the sheet behind it away.
+        CompositionLocalProvider(LocalInsideSheet provides false, LocalSheetDismiss provides null) {
+            ScopedViewModels {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(DrokpoTheme.colors.background),
+                ) {
+                    content()
+                }
             }
         }
     }

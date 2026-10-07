@@ -475,6 +475,7 @@ class AppPreferences internal constructor(context: Context) {
 | `drokpo.appearance` | String (`AppearanceMode.raw`) | `"system"` | `@AppStorage` in DrokpoApp, SettingsView, CommunitySettingsView | MainActivity theme, Settings, CommunitySettings |
 | `drokpo.blockedUsers` | String (JSON array of `BlockedUser`) | `[]` | `UserDefaults` in BlockStore | BlockStore (spine-internal) |
 | `drokpo.notificationsPrompted` | Boolean | `false` | *Android-only*: iOS's "system prompt only shows once" | PushService (spine-internal) |
+| `drokpo.locationPermissionRequested` | Boolean | `false` | *Android-only*: iOS's `.notDetermined` location status | features/onboarding `LocationFetcher` (`internal suspend fun locationPermissionRequestedNow()` / `setLocationPermissionRequested(value)`; set just before the first dialog, so a first-ever dialog dismissed with back or a tap outside isn't read as a permanent denial) |
 
 Those are the only persisted keys in the iOS app (grep: `AppStorage`, `UserDefaults`). Feature
 groups must not add DataStore keys. Request them instead.
@@ -533,8 +534,14 @@ enum class NavIcon { Back, Close, None }
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     skipPartiallyExpanded: Boolean = true,
+    containerColor: Color = DrokpoTheme.colors.background,     // integrator addition (grabber strip included)
     content: @Composable ColumnScope.() -> Unit,
 )
+/** Integrator addition. Inside a DrokpoSheet: hide() with the slide-down animation, then the sheet's
+ *  onDismissRequest (iOS dismiss()); repeated calls during one hide are ignored. Null outside a
+ *  sheet and inside a FullScreenCover (which also resets LocalInsideSheet to false). Wire the
+ *  sheet's own Close (X) to it: `onClose = LocalSheetDismiss.current ?: onDismissRequest`. */
+val LocalSheetDismiss: ProvidableCompositionLocal<(() -> Unit)?>
 
 /** iOS .fullScreenCover, and form sheets (Edit profile, Settings, Composer, Phone sign-in):
  *  full-screen Dialog (usePlatformDefaultWidth=false, decorFitsSystemWindows=false), edge-to-edge,
@@ -601,7 +608,7 @@ val LocalInsideSheet: ProvidableCompositionLocal<Boolean>   // default false
 | File | Widgets |
 |---|---|
 | `Bars.kt` | `BackButton`, `CloseButton`, `ActionBar` (bottom action bar on the bar background), `ListDivider(startIndent)`, `PlainSectionHeader` |
-| `Buttons.kt` | `ControlSize { Small, Regular, Large }`, `ProminentButton` (`.borderedProminent`; text or slot overload, `loading`, `icon`, `tint`), `PrimaryButton` (full-width bottom call to action: Continue/Finish, Like back), `SecondaryButton` (`.bordered`), `PlainTextButton`, `DestructiveTextButton`, `ButtonMetrics` |
+| `Buttons.kt` | `ControlSize { Small, Regular, Large }`, `ProminentButton` (`.borderedProminent`; text or slot overload, `loading`, `icon`, `tint`), `PrimaryButton` (full-width bottom call to action: Continue/Finish, Like back), `SecondaryButton` (`.bordered`: no `tint` = iOS without `.tint()`, accent label on the grey `secondaryFill`; an explicit `tint`, `.tint(.accentColor)` included, = translucent tinted fill; `spacing` sets the label gap), `PlainTextButton`, `DestructiveTextButton`, `ButtonMetrics` |
 | `Grouped.kt` | `GroupedList` (LazyColumn on the grouped background), `GroupedForm` (scrolling Column), `GroupedRow`, `GroupedValueRow`, `GroupedNavigationRow`, `GroupedToggleRow` (text or label slot), `GroupedButtonRow` (destructive, loading), `GroupedExternalLinkRow`, `GroupedCheckmarkRow`, `GroupedPickerRow` (iOS `Picker(.menu)`), `GroupedTextField`, `drokpoSwitchColors()`, `GroupedDefaults` |
 | `Chips.kt` | `FlowLayout` (iOS FlowLayout), `TagFlow`, `TagChip`, `TintedTag`, `OverlayTag` (badges on photos), `Chip` + `ChipBar` (pill filters) |
 | `SegmentedPicker.kt` | `SegmentedPicker(options, selected, onSelect, label = …)`: iOS `Picker(.segmented)` look |
@@ -622,7 +629,8 @@ The theme agent owns `ui/theme`. Names as shipped:
   `label`, `secondaryLabel`, `tertiaryLabel`, `quaternaryLabel`, `placeholderText`,
   `background`, `secondaryBackground`, `tertiaryBackground`, `groupedBackground`,
   `secondaryGroupedBackground`, `tertiaryGroupedBackground`, `bar`, `separator`,
-  `opaqueSeparator`, `fill` (systemGray6-like), `fillSubtle`, `tertiaryFill`, `systemGray`,
+  `opaqueSeparator`, `fill` (systemGray6-like), `fillSubtle`, `tertiaryFill`, `secondaryFill`
+  (UIKit secondarySystemFill: untinted `.bordered` buttons), `systemGray`,
   `green`, `orange`, `yellow`, `onPhoto`, `photoScrimLight`, `photoScrim`, `photoScrimStrong`,
   `dimmingScrim`, `cardBackdrop`.
 - `DrokpoTheme.typography` (`DrokpoTypography`): `largeTitle`, `title`, `title2`, `title3`,
@@ -1297,7 +1305,8 @@ sealed interface ProfileDetailContext {
 }
 
 /** Port of ProfileDetailView. onReport/onBlock: caller-owned safety (Discover — the card must also
- *  leave the deck); when null the screen calls Safety.report / Safety.block itself and then onBack().
+ *  leave the deck); when null the screen calls Safety.report itself (and stays, like iOS report()) or
+ *  Safety.block itself and then onBack() (iOS block() → dismiss()).
  *  title overrides the top-bar title (ProfileScreen preview passes "Preview"). */
 @Composable fun ProfileDetailScreen(
     card: FeedCard,
@@ -2380,8 +2389,8 @@ Strings in quotes are verbatim iOS copy. "→" means "does / calls".
 - **ProfileDetail safety:**
   - Report → "Why are you reporting this profile?", destructive reasons.
   - Block → "Block {name ?: "this member"}?", message "You won't see each other anywhere in Drokpo.".
-  - Both use the caller's `onReport` / `onBlock` when given. Otherwise `Safety.report` /
-    `Safety.block`, then `onBack()`.
+  - Both use the caller's `onReport` / `onBlock` when given. Otherwise `Safety.report` (the
+    screen stays open, as iOS `report()` never dismisses) / `Safety.block`, then `onBack()`.
 - **ProfileDetail action bar** (bottom bar on the bar background):
   - Plain: none.
   - Discover: `SwipeActionButtons(onPass, onLike)` with 12dp vertical padding.

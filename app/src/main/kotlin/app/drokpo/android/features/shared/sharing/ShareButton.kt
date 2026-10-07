@@ -12,8 +12,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
 /**
- * Port of ShareButton: toolbar/inline share affordance that presents ShareSheet for `content`.
- * Must live under MainTabs (ShareSheet needs LocalChatStore). (CONTRACT §B.11.)
+ * Port of ShareButton: toolbar/inline share affordance that presents
+ * [ShareSheet] for [content]. Must live under MainTabs' subtree (ShareSheet
+ * needs [app.drokpo.android.features.chats.LocalChatStore]). The icon takes
+ * the surrounding content colour — accent in a top bar's actions.
+ * iOS `square.and.arrow.up` → the Android share glyph. (CONTRACT §B.11.)
  */
 @Composable
 fun ShareButton(content: ShareableContent, modifier: Modifier = Modifier) {

@@ -73,6 +73,11 @@ data class DrokpoColors(
     val fillSubtle: Color,
     /** tertiarySystemFill — segmented-control track, disabled button fill. */
     val tertiaryFill: Color,
+    /**
+     * secondarySystemFill — the grey behind an untinted `.buttonStyle(.bordered)`
+     * (App Store sign-in screenshots: (233,233,235) light, (38,38,41) dark).
+     */
+    val secondaryFill: Color,
 
     // iOS system grays
     val systemGray: Color,
@@ -129,6 +134,7 @@ internal val LightDrokpoColors = DrokpoColors(
     fill = Color(0x2E3C3C43),
     fillSubtle = Color(0x173C3C43),
     tertiaryFill = Color(0x1F767680),
+    secondaryFill = Color(0x29787880),
     systemGray = Color(0xFF8E8E93),
     systemGray2 = Color(0xFFAEAEB2),
     systemGray3 = Color(0xFFC7C7CC),
@@ -169,6 +175,7 @@ internal val DarkDrokpoColors = DrokpoColors(
     fill = Color(0x29EBEBF5),
     fillSubtle = Color(0x14EBEBF5),
     tertiaryFill = Color(0x3D767680),
+    secondaryFill = Color(0x52787880),
     systemGray = Color(0xFF8E8E93),
     systemGray2 = Color(0xFF636366),
     systemGray3 = Color(0xFF48484A),

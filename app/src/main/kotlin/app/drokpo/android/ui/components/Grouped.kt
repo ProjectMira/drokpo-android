@@ -613,7 +613,9 @@ fun GroupedTextField(
                 Modifier
                     .fillMaxWidth()
                     .padding(GroupedDefaults.RowPadding),
-                contentAlignment = Alignment.CenterStart,
+                // Multi-line (iOS `TextField(axis: .vertical)`): the placeholder sits on the first
+                // line with the cursor, not centred in the minLines-tall box.
+                contentAlignment = if (singleLine) Alignment.CenterStart else Alignment.TopStart,
             ) {
                 if (value.isEmpty()) {
                     Text(placeholder, style = textStyle, color = colors.placeholderText)

@@ -172,7 +172,7 @@ Components:
   `bubble.left.and.bubble.right.fill`→`Forum`, `person.fill`→`Person`,
   `rectangle.stack.fill`→`Layers`/`ViewCarousel`, `person.3.fill`→`Groups`,
   `square.and.arrow.up`→`IosShare`/`Share`, `arrow.uturn.backward`→`Undo`,
-  `mic.fill`→`Mic`, `photo`→`Image`, `ellipsis`→`MoreHoriz`, `flag`→`Flag`,
+  `mic.fill`→`Mic`, `photo`→`Image`, `ellipsis`→`MoreHoriz`, `ellipsis.circle`→`Outlined.Pending` (toolbar `Menu` glyph), `flag`→`Flag`,
   `hand.raised`→`Block`, `checkmark.seal.fill`→`Verified`, `mappin`→`Place`).
 
 ## Debug catalog (visual QA without signing in)

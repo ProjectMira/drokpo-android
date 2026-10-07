@@ -55,4 +55,36 @@ class ShareKitTest {
         assertNull(SharedLinkMessage.from("hello\nhttps://example.org"))
         assertEquals("one\ntwo", SharedLinkMessage.from("one\nhttps://drokpo-backend.web.app/s/news/n\ntwo")!!.caption)
     }
+
+    @Test fun webUrlEncodesAndRoundTrips() {
+        val odd = ShareableContent.Profile(FeedCard(uid = "a b/c"))
+        assertEquals("https://drokpo-backend.web.app/s/user/a%20b%2Fc", odd.webUrl)
+        assertEquals(ShareDestination.User("a b/c"), ShareDestination.parse(odd.webUrl))
+        listOf(
+            ShareableContent.Community("c1", "TAT"),
+            ShareableContent.Post(CommunityPostCard(postId = "p1")),
+            ShareableContent.News(NewsCard(newsId = "n1")),
+        ).forEach { content ->
+            assertEquals(content.id, ShareDestination.parse(content.webUrl)?.id)
+        }
+    }
+
+    @Test fun destinationIdsAndTripleSlashScheme() {
+        assertEquals("user-u1", ShareDestination.User("u1").id)
+        assertEquals("community-c1", ShareDestination.Community("c1").id)
+        assertEquals("post-p1", ShareDestination.Post("p1").id)
+        assertEquals("news-n1", ShareDestination.News("n1").id)
+        // No host: "s" arrives as the first path segment instead (Foundation behaves the same).
+        assertEquals(ShareDestination.User("u1"), ShareDestination.parse("drokpo:///s/user/u1"))
+        assertNull(ShareDestination.parse("drokpo://x/user/u1"))
+    }
+
+    @Test fun sharedLinkMessageKindLabels() {
+        assertEquals("a profile", SharedLinkMessage(ShareDestination.User("u"), null).kindLabel)
+        assertEquals("a community", SharedLinkMessage(ShareDestination.Community("c"), null).kindLabel)
+        assertEquals("a news story", SharedLinkMessage(ShareDestination.News("n"), null).kindLabel)
+        // The caption keeps every non-link line, in order, and drops blank ones.
+        val message = SharedLinkMessage.from("Losar party\n\n  Join us!  \ndrokpo://s/post/p1")!!
+        assertEquals("Losar party\nJoin us!", message.caption)
+    }
 }

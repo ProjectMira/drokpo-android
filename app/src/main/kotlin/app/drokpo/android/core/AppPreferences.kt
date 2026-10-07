@@ -61,6 +61,7 @@ private val Context.drokpoDataStore: DataStore<Preferences> by preferencesDataSt
  * | `drokpo.appearance`           | `@AppStorage` (DrokpoApp, Settings, CommunitySettings) |
  * | `drokpo.blockedUsers`         | `UserDefaults` in BlockStore (JSON array)   |
  * | `drokpo.notificationsPrompted`| Android-only: iOS's "the system prompt only shows once" |
+ * | `drokpo.locationPermissionRequested` | Android-only: iOS's `.notDetermined` location status |
  *
  * Feature code must not add keys here — request them from the spine.
  */
@@ -142,6 +143,25 @@ class AppPreferences internal constructor(
         }
     }
 
+    /**
+     * `drokpo.locationPermissionRequested` — the location dialog has been shown
+     * at least once. Android has no `.notDetermined` status, and after a first
+     * dialog dismissed with back or a tap outside (Android 11+)
+     * `shouldShowRequestPermissionRationale` is false exactly as after a
+     * permanent denial; this flag tells the two apart (features/onboarding
+     * LocationFetcher).
+     */
+    internal suspend fun locationPermissionRequestedNow(): Boolean =
+        data.map { it[KEY_LOCATION_PERMISSION_REQUESTED] ?: false }.first()
+
+    internal suspend fun setLocationPermissionRequested(value: Boolean) {
+        try {
+            store.edit { it[KEY_LOCATION_PERMISSION_REQUESTED] = value }
+        } catch (e: IOException) {
+            // Worst case a later denial is not yet treated as permanent.
+        }
+    }
+
     // endregion
 
     internal companion object {
@@ -149,5 +169,6 @@ class AppPreferences internal constructor(
         val KEY_APPEARANCE = stringPreferencesKey("drokpo.appearance")
         val KEY_BLOCKED_USERS = stringPreferencesKey("drokpo.blockedUsers")
         val KEY_NOTIFICATIONS_PROMPTED = booleanPreferencesKey("drokpo.notificationsPrompted")
+        val KEY_LOCATION_PERMISSION_REQUESTED = booleanPreferencesKey("drokpo.locationPermissionRequested")
     }
 }
